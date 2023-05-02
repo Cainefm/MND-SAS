@@ -80,6 +80,12 @@
 %let studydate_ed=31dec2018;
 %let sccs_obs_st=24aug2001;
 %let sccs_obs_ed=31dec2018;
+%let wd = C:/Users/LabPCSLi03/Desktop/mnd project;
+
+options dlcreatedir; /* Create folders */
+/* working path for my projects */
+%let rc = %sysfunc(dlgcdir("&wd."));
+
 
 
 filename dx "./1.raw data/dx.xlsx";
@@ -88,25 +94,24 @@ filename rx "./1.raw data/rx.xlsx";
 filename demo "./1.raw data/demo.xlsx";
 filename codesmnd "./1.raw data/codes_mnd.xlsx";
 
-/* Create folders */
-options dlcreatedir;
+/* Define macro and output directories */
 libname sasfiles "./2.sas data";
 libname output "./3.output";
-%include "0.macro_mnd.sas";
-%include "0.Table 1s.sas";
 
-/*SCCS*/
-
-OPTIONS nodate nonumber;
-
-/* Define macro and output directories */
 %LET macdir = C:\Users\LabPCSLi03\Desktop\sas macro\macro;
-%LET outdir = C:\Users\LabPCSLi03\Desktop\sas macro\output;
+%LET outdir = &wd/3.output;
 %LET indir =  C:\Users\LabPCSLi03\Desktop\sas macro\input;
+
 /* Read in macros */
+%INCLUDE "0.macro_mnd.sas";
+%INCLUDE "0.Table 1s.sas";
 %INCLUDE "&macdir\sccs.sas";
 %INCLUDE "&macdir\poisreg.sas";
 %INCLUDE "&macdir\element.sas";
+%INCLUDE "&macdir\macro_sccs.sas";
+
+/*SCCS*/
+OPTIONS nodate nonumber;
 
 /* Data reading */
 %reading(filename=demo,out=demo)
@@ -320,8 +325,9 @@ proc lifereg data=dt4aft order=data;
  output out=obs_aft;
 run;
 
-
-/*SCCCS analysis between hospitalization and rilozle*/
+/* ************************************************************** */
+/* Analysis 4: SCCCS analysis between hospitalization and rilozle */
+/* ************************************************************** */
 
 /*data cleanning*/
 
@@ -416,13 +422,20 @@ create table sccs_dt_e_r as
 	(select * from sccs_dt_druged) as c on a.id=c.id and a.obst=c.obst and a.obed=c.obed;
 quit;
 
+/*Delete the seperated temperal datasets*/
+proc sql;
+   drop table work.sccs_dt_event;
+   drop table work.sccs_dt_drugst;
+   drop table work.sccs_dt_druged;
+quit;
+
 /* Agerange defines the age range for each subject
 In this example, the observation period goes from 366 (inclusive) to 730 (inclusive) 
 days */
 %LET agerange=;
 
 /* Define risk periods */
-%LET risk= -30 -1 0 30 31 60 61 90 91 120 121 150 151 180 181 99999999;
+%LET risk= -30 0 1 30 31 60 61 90 91 120 121 150 151 180 181 99999999;
 
 /* Define age categories */
 %LET age= 0 7300 10950 14600 18250 21900 25550 29200 32850;
@@ -433,56 +446,376 @@ days */
 /* No semiparametric analysis is done */
 %LET semi=N;
 
-/* ************************************** */
-/* Analysis 4: three doses are considered */
-/* ************************************** */
+/**/
+/**/
+/*%macro ob_col_names;*/
+/*	proc sql noprint;*/
+/*	select name into : vars_event separated by ' '*/
+/*	from dictionary.columns*/
+/*	where LIBNAME = upcase('work')*/
+/*	and MEMNAME = upcase('sccs_dt_e_r')*/
+/*	and upcase(name) like 'EVENT_%';*/
+/*	quit;*/
+/**/
+/*	proc sql noprint;*/
+/*	select name into : vars_rx_s separated by ' '*/
+/*	from dictionary.columns*/
+/*	where LIBNAME = upcase('work')*/
+/*	and MEMNAME = upcase('sccs_dt_e_r')*/
+/*	and upcase(name) like 'DRUG_ST%'*/
+/*	where count(*)>1;*/
+/*	quit;*/
+/**/
+/*	proc sql noprint ;*/
+/*	select name into : vars_rx_e separated by ' '*/
+/*	from dictionary.columns*/
+/*	where LIBNAME = upcase('work')*/
+/*	and MEMNAME = upcase('sccs_dt_e_r')*/
+/*	and upcase(name) like 'DRUG_ED%';*/
+/*	quit;*/
+/**/
+/*		*/
+/*	proc sql noprint ;*/
+/*	select name into : vars_rx_s_new separated by ' '*/
+/*	from dictionary.columns*/
+/*	where LIBNAME = upcase('work')*/
+/*	and MEMNAME = upcase('sccs_dt_e_r')*/
+/*	and upcase(name) like 'DRUG_ST_%'*/
+/*	and LENGTH(COMPRESS(name)) = 10;*/
+/*	quit;*/
+/**/
+/*	proc sql noprint ;*/
+/*	select name into : vars_rx_e_new separated by ' '*/
+/*	from dictionary.columns*/
+/*	where LIBNAME = upcase('work')*/
+/*	and MEMNAME = upcase('sccs_dt_e_r')*/
+/*	and upcase(name) like 'DRUG_ED%'*/
+/*	and LENGTH(COMPRESS(name)) = 10;*/
+/*	quit;*/
+/*%mend ob_col_names;*/
+/*%ob_col_names;*/
+/**/
+/*%put &vars_event;*/
+/*%put &vars_rx_s;*/
+/*%put &vars_rx_e;*/
+/*%put &risk;*/
+/**/
+/*%put &vars_rx_s_new;*/
+/*%put &vars_rx_e_new;*/
 
-proc sql noprint;
-select name into : vars_event separated by " "
-from dictionary.columns
-where LIBNAME = upcase("work")
-and MEMNAME = upcase("sccs_dt_e_r")
-and upcase(name) like "EVENT_%";
-quit;
+ 
+/*%scan(&vars_rx_s,3);*/
 
-proc sql noprint;
-select name into : vars_rx_s separated by " "
-from dictionary.columns
-where LIBNAME = upcase("work")
-and MEMNAME = upcase("sccs_dt_e_r")
-and upcase(name) like "DRUG_S_%";
-quit;
-
-proc sql noprint ;
-select name into : vars_rx_e separated by " "
-from dictionary.columns
-where LIBNAME = upcase("work")
-and MEMNAME = upcase("sccs_dt_e_r")
-and upcase(name) like "DRUG_E_%";
-quit;
-
-
+/*cut those prescripiton period into desired risk periods*/
+/*%shiftwd(rawdata=sccs_dt_e_r,fromvar= drug_st1,endvar=drug_ed1,wdays= &risk)*/
+/*%shiftwd(rawdata=sccs_dt_e_r,fromvar= drug_st2,endvar=drug_ed2,wdays= &risk)*/
+/*%shiftwd(rawdata=sccs_dt_e_r,fromvar= drug_st3,endvar=drug_ed3,wdays= &risk)*/
+/*%shiftwd(rawdata=sccs_dt_e_r,fromvar= drug_st4,endvar=drug_ed4,wdays= &risk)*/
+/*%shiftwd(rawdata=sccs_dt_e_r,fromvar= drug_st5,endvar=drug_ed5,wdays= &risk)*/
+%ob_col_names(DRUG_ST%);
+%let vars_rx_s = &vars_temp;
+%ob_col_names(DRUG_ED%);
+%let vars_rx_e = &vars_temp;
+%ob_col_names(EVENT%);
+%let vars_event = &vars_temp;
 %put &vars_event;
-%put &vars_rx_s;
-%put &vars_rx_e;
+
+%cut_risks;
+
+%restructure_risk_periods;
 
 
-%sccs(data=sccs_dt_e_r, pid=id,dob_raw=dob, events=&vars_event, vacc=&vars_rx_s
-	  ,startst=obst, endst=obed);
-	
+/*resturcture event dataset*/
+data sccs_dt_event;
+	set sccs_dt_e_r(keep = id obst obed dob &vars_event);
+run;
 
-proc sql noprint ;
-select name into : vars_risk separated by " "
-from dictionary.columns
-where LIBNAME = upcase("work")
-and MEMNAME = upcase("wk_sccs")
-and upcase(name) like "RISKR_%";
+proc sort data=sccs_dt_event nodup;
+	by id obst obed dob &vars_event;
+run;
+/**/
+/*proc transpose data=sccs_dt_event out=sccs_dt_event (drop = _NAME_ rename=(COL1=event));*/
+/*	   var &vars_event;*/
+/*	   by id obst obed dob;*/
+/*run;*/
+/**/
+/*proc sort data=sccs_dt_event nodup;*/
+/*	by id obst obed dob event;*/
+/*	where event is not null;*/
+/*run;*/
+
+/*merge rx st/ed and rx event*/
+
+data sccs_sted_event;
+merge sccs_dt_event sccs_dt_st_ed_out ;
+by id obst obed dob;
+run;
+
+proc sort data = sccs_sted_event nodup;
+	by id obst obed &vars_event;
+run;
+
+
+%ob_col_names(DRUG_ST%,dataset=SCCS_STED_EVENT);
+%let vars_rx_s = &vars_temp;
+%ob_col_names(DRUG_ED%,dataset=SCCS_STED_EVENT);
+%let vars_rx_e = &vars_temp;
+%ob_col_names(EVENT%,dataset=SCCS_STED_EVENT);
+%let vars_event = &vars_temp;
+
+%sccs(data=sccs_sted_event, 
+              pid=id,
+              dob_raw=dob, events=&vars_event, 
+              start_risk = &vars_rx_s, 
+              end_risk = &vars_rx_e, 
+              treatments_ind = 1 8,
+              treatments_names = riluzole,
+              startst=obst, endst=obed);
+
+
+
+ods output estimates=modelestimates;
+proc genmod data = wk_sccs;
+Class risk_riluzole_1(ref = "0") risk_riluzole_2(ref = "0") risk_riluzole_3(ref = "0") 
+	  risk_riluzole_4(ref = "0") risk_riluzole_5(ref = "0") risk_riluzole_6(ref = "0") 
+	  risk_riluzole_7(ref = "0") risk_riluzole_8(ref = "0") age(ref = "1") id season(ref = "0") / order = data;/*param=ref ref=first*/
+Model nevt = risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 
+			 risk_riluzole_4 risk_riluzole_5 risk_riluzole_6 
+			 risk_riluzole_7 risk_riluzole_8 age season /dist=poisson link=log offset=l_off;
+/*repeated subject=id;*/
+/* Use the estimate statement to get predicted values and their confidence intervals */
+Estimate "strx_30b" risk_riluzole_1 1 -1 / exp ;
+Estimate "strx_0a" risk_riluzole_2  1 -1 / exp ;
+Estimate "strx_30a" risk_riluzole_3 1 -1 / exp ;
+Estimate "strx_60a" risk_riluzole_4 1 -1 / exp ;
+Estimate "strx_90a" risk_riluzole_5 1 -1 / exp ;
+Estimate "strx_120a" risk_riluzole_6 1 -1 / exp ;
+Estimate "strx_150a" risk_riluzole_7 1 -1 / exp ;
+Estimate "strx_180a" risk_riluzole_8 1 -1 / exp ;
+run;
+ods output close;
+
+proc export data=modelestimates
+    outfile="&outdir/mnd.xlsx"
+    dbms=xlsx 
+	replace;
+	sheet="primary_analysis";
+run;
+
+
+
+
+
+
+ods excel file="output.xlsx";
+/*model estimation*/
+ods excel options(sheet_name='Primary analysis');
+
+
+
+ods excel close;
+/* ?? ODS Excel ?? */
+ods _all_ close;
+
+
+
+
+
+
+
+
+
+ods listing close;
+ods trace on;
+proc genmod data = wk_sccs;
+Class risk_riluzole_1(ref = "0") risk_riluzole_2(ref = "0") risk_riluzole_3(ref = "0") 
+	  risk_riluzole_4(ref = "0") risk_riluzole_5(ref = "0") risk_riluzole_6(ref = "0") 
+	  risk_riluzole_7(ref = "0") risk_riluzole_8(ref = "0") age id season / order = data;/*param=ref ref=first*/
+Model nevt = risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 
+			 risk_riluzole_4 risk_riluzole_5 risk_riluzole_6 
+			 risk_riluzole_7 risk_riluzole_8 age season /dist=poisson link=log offset=l_off;
+/*repeated subject=id;*/
+/* Use the estimate statement to get predicted values and their confidence intervals */
+Estimate "strx_30b" risk_riluzole_1 1 -1 / exp ;
+Estimate "strx_0a" risk_riluzole_2  1 -1 / exp ;
+Estimate "strx_30a" risk_riluzole_3 1 -1 / exp ;
+Estimate "strx_60a" risk_riluzole_4 1 -1 / exp ;
+Estimate "strx_90a" risk_riluzole_5 1 -1 / exp ;
+Estimate "strx_120a" risk_riluzole_6 1 -1 / exp ;
+Estimate "strx_150a" risk_riluzole_7 1 -1 / exp ;
+Estimate "strx_180a" risk_riluzole_8 1 -1 / exp ;
+run;
+ods trace off;
+ods listing;
+
+
+
+
+
+
+proc genmod data = wk_sccs;
+Class risk_riluzole_1(ref = "0") risk_riluzole_2(ref = "0") risk_riluzole_3(ref = "0") 
+	  risk_riluzole_4(ref = "0") risk_riluzole_5(ref = "0") risk_riluzole_6(ref = "0") 
+	  risk_riluzole_7(ref = "0") risk_riluzole_8(ref = "0") age id season / order = data;/*param=ref ref=first*/
+Model nevt = risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 
+			 risk_riluzole_4 risk_riluzole_5 risk_riluzole_6 
+			 risk_riluzole_7 risk_riluzole_8 age season /dist=poisson link=log offset=l_off;
+/*repeated subject=id;*/
+			 run;
+
+
+
+%macro extract_sccs_multiple_outcome;
+	%let end = %sysfunc(countw(&vars_event));
+    %DO abc=1 %TO &end;
+        %sccs(data=sccs_sted_event, 
+              pid=id,
+              dob_raw=dob, events=event&abc, 
+              start_risk = &vars_rx_s, 
+              end_risk = &vars_rx_e, 
+              treatments_ind = 1 8,
+              treatments_names = riluzole,
+              startst=obst, endst=obed, outdata=wk_sccs&abc);
+    %END;
+%mend extract_sccs_multiple_outcome;
+
+%extract_sccs_multiple_outcome;
+
+/* Create a dataset with the table names */
+proc sql noprint;
+  select memname into : name_sccs_dt separated by ' ' 
+  from dictionary.tables
+  where LIBNAME = upcase('work')
+  and upcase(MEMNAME) like "WK_SCCS%" 
+  and upcase(MEMNAME) <> "WK_SCCS";
 quit;
-%put &vars_risk;
+DATA combined_sccs_dt;
+SET &name_sccs_dt;
+RUN;
+proc sql noprint;
+  select memname into : name_sccs_dt separated by ',' 
+  from dictionary.tables
+  where LIBNAME = upcase('work')
+  and upcase(MEMNAME) like "WK_SCCS%" 
+  and upcase(MEMNAME) <> "WK_SCCS";
+quit;
+proc sql;
+	drop table &name_sccs_dt;
+quit;
 
-%poisreg(data=wk_sccs,y=nevt,covar=int &vars_risk
-		,class=age
-        ,offset=offset,prntyn=Y,elim=id
+proc sort data=combined_sccs_dt;
+by id start stop ;
+run;
+
+proc logistic data=combined_sccs_dt;
+  strata id; /* this specifies the matching variable */
+  class id age season;
+  model nevt(ref="0") = risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 risk_riluzole_4
+		     risk_riluzole_5 risk_riluzole_6 risk_riluzole_7 risk_riluzole_8 age season l_off;
+  ods output OddsRatios=ORs; 
+run;
+
+
+proc genmod data = combined_sccs_dt;
+Class risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 risk_riluzole_4
+		     risk_riluzole_5 risk_riluzole_6 risk_riluzole_7 risk_riluzole_8 age id season / order = data ;/*param=ref ref=first*/
+Model nevt = risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 risk_riluzole_4
+		     risk_riluzole_5 risk_riluzole_6 risk_riluzole_7 risk_riluzole_8 age season /dist=poisson link=log offset=l_off;
+repeated subject=id;
+/* Use the estimate statement to get predicted values and their confidence intervals */
+Estimate "strx_30b" risk_riluzole_1 1 -1 / exp ;
+Estimate "strx_0a" risk_riluzole_2  1 -1 / exp ;
+Estimate "strx_30a" risk_riluzole_3 1 -1 / exp ;
+Estimate "strx_60a" risk_riluzole_4 1 -1 / exp ;
+Estimate "strx_90a" risk_riluzole_5 1 -1 / exp ;
+Estimate "strx_120a" risk_riluzole_6 1 -1 / exp ;
+Estimate "strx_150a" risk_riluzole_7 1 -1 / exp ;
+Estimate "strx_180a" risk_riluzole_8 1 -1 / exp ;
+run;
+
+proc genmod data = wk_sccs;
+  class risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 risk_riluzole_4
+        risk_riluzole_5 risk_riluzole_6 risk_riluzole_7 risk_riluzole_8 age id season / order=data ; /*param=ref ref=first*/
+  model nevt = risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 risk_riluzole_4
+               risk_riluzole_5 risk_riluzole_6 risk_riluzole_7 risk_riluzole_8 age season / dist=poisson link=log offset=l_off;
+  estimate 'RR Risk Riluzole 1' risk_riluzole_1 1 -1 / exp ;  /* Create estimates of adjusted RR for each level of risk_riluzole */
+  estimate 'RR Risk Riluzole 2' risk_riluzole_2  1 -1 / exp ;
+  estimate 'RR Risk Riluzole 3' risk_riluzole_3  1 -1 / exp ;
+  estimate 'RR Risk Riluzole 4' risk_riluzole_4  1 -1 / exp ;
+  estimate 'RR Risk Riluzole 5' risk_riluzole_5  1 -1 / exp ;
+  estimate 'RR Risk Riluzole 6' risk_riluzole_6  1 -1 / exp ;
+  estimate 'RR Risk Riluzole 7' risk_riluzole_7  1 -1 / exp ;
+  estimate 'RR Risk Riluzole 8' risk_riluzole_8  1 -1 / exp ;
+run;
+
+
+
+
+
+/* Load the data */
+data mydata;
+   input exposure_count predictor1 predictor2 predictor3;
+   datalines;
+   22 201 134 0
+   17 89 88 1
+   33 350 211 0
+   10 100 75 1
+   40 450 311 0
+   8 77 70 1
+   27 270 160 0
+   12 110 85 1
+   34 400 250 0
+   15 130 90 1
+   ;
+run;
+
+/* Run Poisson regression using PROC GENMOD */
+proc genmod data=mydata;
+   model exposure_count = predictor1 predictor2 predictor3 / dist=poisson link=log;
+   /* Use ESTIMATE statement to obtain exponentiated parameter estimates and their confidence intervals */
+   estimate 'predictor1 exp(beta)' predictor1  1 -1 / exp;
+   estimate 'predictor2 exp(beta)' predictor2  1 -1 / exp;
+   estimate 'predictor3 exp(beta)' predictor3  1 -1 / exp;
+run;
+
+
+
+
+
+
+
+proc logistic data=wk_sccs;
+strata id;
+model nevt = &vars_risk age season;
+run
+
+
+lsmestimate riskR1 "abc" 1 -1 /  exp cl;
+
+ods output parameterestimates=outdataset;
+Estimate "strx_30b" riskR1 1 -1 / exp ;
+Estimate "strx_0a" riskR2  1 -1 / exp ;
+Estimate "strx_30a" riskR3 1 -1 / exp ;
+Estimate "strx_60a" riskR4 1 -1 / exp ;
+Estimate "strx_90a" riskR5 1 -1 / exp ;
+Estimate "strx_120a" riskR6 1 -1 / exp ;
+Estimate "strx_150a" riskR7 1 -1 / exp ;
+Estimate "strx_180a" riskR8 1 -1 / exp ;
+
+proc genmod data = wk_sccs;
+class &vars_risk age id season / order = data param=ref ref=first;
+Model nevt = &vars_risk age season /dist=poisson link=LOG offset=offset;
+REPEATED SUBJECT=id/type=Exchangeable;
+Ods output parameterestimates=outdataset;
+Estimate "SCCS" riskR1;
+run;
+
+
+%poisreg(data=wk_sccs,y=nevt
+		,covar=int risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 risk_riluzole_4
+        risk_riluzole_5 risk_riluzole_6 risk_riluzole_7 risk_riluzole_8
+		,class=age season
+		,offset=offset,prntyn=Y,elim=id
         ,title="SCCS primary analysis for MND");
 
 

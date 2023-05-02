@@ -67,7 +67,7 @@
       %let i=%eval(&i+1);
    %end;
    proc sql;
-   	drop table sasfile.pthx;
+   	drop table sasfiles.pthx;
    quit;
 %mend get_past_hx;
 
@@ -116,7 +116,7 @@
       %let i=%eval(&i+1);
    %end;
    proc sql;
-   	drop table sasfile.ptrx;
+   	drop table sasfiles.ptrx;
 	quit;
 %mend get_past_rx;
 
@@ -213,7 +213,7 @@
 		on x.id = y.id;
 		update sasfiles.Demo_ /* update all empty*/
 		set exposure = 0 where exposure =.;
-		drop table ttt;
+		/*drop table ttt;*/
 	run;
 
 
@@ -280,3 +280,161 @@ PROC TRANSPOSE DATA=&out OUT=&out PREFIX=&prefix;
 RUN;
 %mend deduptrans;
 
+
+%macro shiftwd (rawdata=,fromvar=,endvar=,wdays=);
+   %GLOBAL nb_risk;
+   
+   %element(lstvar=&wdays , pref = risk);
+   %LET nb_risk = %EVAL(&nb_risk/2);
+
+   DATA &rawdata;
+   SET &rawdata;
+   %put &nb_risk;
+   %DO i=1 %TO &nb_risk;
+/*   %put &i;*/
+/*	 %put risk&ib;*/
+     %LET ib = %EVAL(&i*2-1);
+	 %LET ie = %EVAL(&i*2);
+/*	 Same date of rx st and end;*/
+	 IF (&endvar=&fromvar) THEN DO;
+		&&fromvar._&i = &fromvar; 
+		&&endvar._&i = &endvar; 
+	 END;
+
+	 IF (&endvar-&fromvar+1 < &&risk&ib) THEN DO; 
+		  &&fromvar._&i = .; 
+		  &&endvar._&i = .; 
+	 END;
+
+	 IF (&endvar-&fromvar+1 >= &&risk&ib) THEN DO;
+		 IF (&endvar - &fromvar+1 <= &&risk&ie) THEN DO;
+	  		  &&fromvar._&i = &fromvar + &&risk&ib  -1;
+			  &&endvar._&i = &endvar;
+		 END;
+		 ELSE IF (&endvar -&fromvar+1 > &&risk&ie) THEN DO;
+/*			 	  IF (&fromvar + &&risk&ie > &endvar) THEN DO;*/
+				      &&fromvar._&i = &fromvar + &&risk&ib -1;
+/*		     		  &&endvar._&i = &endvar;	*/
+					  &&endvar._&i = &fromvar + &&risk&ie -1;
+/*				  END;*/
+/*				  ELSE DO;*/
+/*			  		  &&fromvar._&i = &fromvar + &&risk&ib;*/
+/*					  &&endvar._&i = &fromvar + &&risk&ie;*/
+/*		          END;*/
+		 END;
+	  END;
+	  	 
+	  format &&fromvar._&i yymmdd10.;
+	  format &&endvar._&i yymmdd10.;
+   %END;
+   RUN;
+%mend shiftwd;
+
+/*cut the rx period into 8 risk period*/
+%macro cut_risks;
+%local j;
+%do j=1 %to %sysfunc(countw(&vars_rx_s));
+	%shiftwd(rawdata=sccs_dt_e_r,fromvar= %scan(&vars_rx_s,&j),endvar=%scan(&vars_rx_e,&j),wdays= &risk);
+   	%put %scan(&vars_rx_s,&j);
+%end;
+%mend cut_risks;
+
+
+/*obtain the column names according to keywords;*/
+%macro ob_col_names(keywords,dataset=sccs_dt_e_r);
+	%symdel vars_temp;
+	%global vars_temp;
+	proc sql noprint;
+	select name into : vars_temp separated by ' '
+	from dictionary.columns
+	where LIBNAME = upcase('work')
+	and MEMNAME = %upcase("&dataset")
+	and upcase(name) like "&keywords" escape '\';
+	quit;
+%mend ob_col_names(keywords,dataset);
+
+/*loop to restruction the risk period into one; cos the previous risk cutting expand each rx into 8 risk period (8 column* rx); now restructure it*/
+%macro restructure_risk_periods;
+%local j;
+%do j= 1 %to %EVAL(%sysfunc(countw(&risk))/2);
+
+	%ob_col_names(DRUG_ST__&j);
+	%let vars_rx_s_new=&vars_temp;
+/*	%ob_col_names(%upcase(%scan(DRUG_ED__&j)));*/
+	%ob_col_names(DRUG_ED__&j);
+	%let vars_rx_e_new=&vars_temp;
+/*	%ob_col_names(EVENT%);*/
+/*	%let vars_event = &vars_temp;*/
+/*	%put &vars_rx_s_new;*/
+	%rs_rp_4_rx(&j);
+	%if &j =1 %then %do;
+		data sccs_dt_st_ed_out;
+			set sccs_dt_st_ed;
+		run;
+	%end;
+	%else %do;
+		data sccs_dt_st_ed_out;
+			merge sccs_dt_st_ed_out sccs_dt_st_ed;
+			by id obst obed dob;
+		run;
+	%end;
+	%if &j = %EVAL(%sysfunc(countw(&risk))/2) %then %do;
+		proc sql;
+		drop table work.sccs_dt_st_ed;
+		quit;
+	%end;
+%end;
+%mend restructure_risk_periods;
+
+
+
+%macro rs_rp_4_rx(i);
+	/*restructure_risk_periods_within_each_rx*/
+	data sccs_dt_e_r_st;
+	set sccs_dt_e_r (keep =id obst obed dob &vars_rx_s_new);
+	run;
+
+	data sccs_dt_e_r_ed;
+	set sccs_dt_e_r (keep =id obst obed dob &vars_rx_e_new);
+	run;
+	
+	%local new_name_s;
+	%local new_name_e;
+	%let new_name_s = drug_st_&j;
+	%let new_name_e = drug_ed_&j;
+/*	%let new_name_e = %scan(&vars_rx_e_new,1,"_")_%scan(&vars_rx_e_new,2,"_");*/
+
+	proc transpose data=sccs_dt_e_r_st out=sccs_dt_e_r_st_long (drop = _NAME_ rename=(COL1=&new_name_s));
+	   var &vars_rx_s_new;
+	/*   id id obst obed dob ;*/
+	   by id obst obed dob;
+	run;
+
+	proc transpose data=sccs_dt_e_r_ed out=sccs_dt_e_r_ed_long (drop=_NAME_ rename=(COL1=&new_name_e));
+	   var &vars_rx_e_new;
+	   by id obst obed dob;
+	run;
+
+	data sccs_dt_st_ed;
+	  merge sccs_dt_e_r_st_long sccs_dt_e_r_ed_long;
+	  by id obst obed dob ; 
+	run;
+
+	data sccs_dt_st_ed;
+	set sccs_dt_st_ed;
+	where &new_name_s is not null and &new_name_e is not null;
+	run;
+
+	proc sort data = sccs_dt_st_ed out = sccs_dt_st_ed;
+	by id obst obed &new_name_s;
+	run;
+
+	/*Delete the temperal datasets*/
+	proc sql;
+	   drop table work.sccs_dt_e_r_st_long;
+	   drop table work.sccs_dt_e_r_ed_long;
+	   drop table work.sccs_dt_e_r_st;
+	   drop table work.sccs_dt_e_r_ed;	   
+	quit;
+
+%mend rs_rp_4_rx(vars_rx_s_new,vars_rx_e_new);
