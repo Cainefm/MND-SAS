@@ -347,7 +347,7 @@ RUN;
 	proc sql noprint;
 	select name into : vars_temp separated by ' '
 	from dictionary.columns
-	where LIBNAME = upcase('work')
+	where LIBNAME = %upcase('work')
 	and MEMNAME = %upcase("&dataset")
 	and upcase(name) like "&keywords" escape '\';
 	quit;
