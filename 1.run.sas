@@ -124,58 +124,19 @@ libname output "./3.output";
 
 %INCLUDE "&macdir\0.3 macro_sccs.sas";
 
-%run_sccs(title=primary_analysis)
-%run_sccs(title=sub_ae,ae=T)
-%run_sccs(title=subgroup_pneumonia,icd_defined = "/486/")
-%run_sccs(title=subgroup_arf,icd_defined = "/518.8[12]/")
+%run_sccs(title=primary_analysis);
+%run_sccs(title=sg_ae,ae=T)
+%run_sccs(title=sg_pneumonia,icd_defined = "/486/")
+%run_sccs(title=sg_arf,icd_defined = "/518.8[12]/")
+%run_sccs(title=sens_collapse,collapse=T)
+
+%run_sccs_collapse()
 
 %put &icd_defined;
 %let icd_defined = "/^486/";
 %let icd_defined = "/^518.8[12]/";
 
 
-proc sql;
-	select sum(nevt * risk_riluzole_1) as risk_riluzole_1,
-		   sum(nevt * risk_riluzole_2) as risk_riluzole_2,
-		   sum(nevt * risk_riluzole_3) as risk_riluzole_3,
-		   sum(nevt * risk_riluzole_4) as risk_riluzole_4,
-		   sum(nevt * risk_riluzole_5) as risk_riluzole_5,
-		   sum(nevt * risk_riluzole_6) as risk_riluzole_6,
-		   sum(nevt * risk_riluzole_7) as risk_riluzole_7,
-		   sum(nevt * risk_riluzole_8) as risk_riluzole_8
-	from wk_sccs ;
-quit;
 
-/* Create a new table with the sums */
-proc sql;
-    create table sum_personcounts as 
-    select sum(nevt * risk_riluzole_1) as risk_riluzole_1,
-           sum(nevt * risk_riluzole_2) as risk_riluzole_2,
-           sum(nevt * risk_riluzole_3) as risk_riluzole_3,
-           sum(nevt * risk_riluzole_4) as risk_riluzole_4,
-           sum(nevt * risk_riluzole_5) as risk_riluzole_5,
-           sum(nevt * risk_riluzole_6) as risk_riluzole_6,
-           sum(nevt * risk_riluzole_7) as risk_riluzole_7,
-           sum(nevt * risk_riluzole_8) as risk_riluzole_8
-    from wk_sccs ;
-quit;
 
-/* Transpose the table to get the columns as rows */
-proc transpose data=sum_personcounts out=sum_personcounts (rename=(_name_=risk_period col1=no_people) ) ;
-    var risk_riluzole_1-risk_riluzole_8;
-	label risk_period='risk period'; 
-run;
-
-proc sql;
-    create table sum_py as
-    select 
-        sum(case when nevt < 2 then 1 else nevt end * risk_riluzole_1 * offset)/365.25 as risk_riluzole_1,
-        sum(case when nevt < 2 then 1 else nevt end * risk_riluzole_2 * offset)/365.25 as risk_riluzole_2,
-        sum(case when nevt < 2 then 1 else nevt end * risk_riluzole_3 * offset)/365.25 as risk_riluzole_3,
-        sum(case when nevt < 2 then 1 else nevt end * risk_riluzole_4 * offset)/365.25 as risk_riluzole_4,
-        sum(case when nevt < 2 then 1 else nevt end * risk_riluzole_5 * offset)/365.25 as risk_riluzole_5,
-        sum(case when nevt < 2 then 1 else nevt end * risk_riluzole_6 * offset)/365.25 as risk_riluzole_6,
-        sum(case when nevt < 2 then 1 else nevt end * risk_riluzole_7 * offset)/365.25 as risk_riluzole_7,
-        sum(case when nevt < 2 then 1 else nevt end * risk_riluzole_8 * offset)/365.25 as risk_riluzole_8
-    from wk_sccs;
-quit;
+	

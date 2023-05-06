@@ -6,7 +6,7 @@
 /*SCCS setting*/
 OPTIONS nodate nonumber;
 
-%MACRO run_sccs(title=MND, ae=F, icd_defined = .);
+%MACRO run_sccs(title=MND, ae=F, icd_defined = .,collapse=F);
 
 	/*data cleanning*/
 	%shrink(source=RX,Remove_IP_Rx=TRUE,st=date_rx_st,end=date_rx_end,out=shrankrx,gap=1);
@@ -37,7 +37,7 @@ OPTIONS nodate nonumber;
 			from shrankrx group by id) as b on a.id=b.id 
 		left join (select * from sasfiles.Demo) as c on b.id = c.id 
 		left join (select distinct * from shrankip) as d on c.id = d.id
-		where date_dsg <= "&sccs_obs_ed."d and date_dsg <>.  ; 
+		where date_dsg <= "&sccs_obs_ed."d and date_dsg ^=.  ; 
 	quit;
 
 	proc sort data=sasfiles.dx out=sasfiles.dx;
@@ -131,7 +131,16 @@ OPTIONS nodate nonumber;
 	/* Agerange defines the age range for each subject*/
 	%LET agerange=;
 	/* Define risk periods */
-	%LET risk= -30 0 1 30 31 60 61 90 91 120 121 150 151 180 181 99999999;
+	
+	%IF &collapse=T %THEN %DO;
+		%LET risk = -30 0 1 60 61 120 121 180 181 9999999999;
+	%END;
+
+	%IF &collapse=F %THEN %DO;
+		%LET risk = -30 0 1 30 31 60 61 90 91 120 121 150 151 180 181 99999999;
+	%END;
+
+
 	/* Define age categories */
 	%macro generate_sequence(start=, end=);
 	    %local i;
@@ -199,41 +208,287 @@ OPTIONS nodate nonumber;
 	%ob_col_names(EVENT%,dataset=SCCS_STED_EVENT);
 	%let vars_event = &vars_temp;
 
-	%sccs(data=sccs_sted_event, 
+	%IF &collapse=F %THEN %DO;
+		
+		%sccs(data=sccs_sted_event, 
 	              pid=id,
 	              dob_raw=dob, events=&vars_event, 
 	              start_risk = &vars_rx_s, 
 	              end_risk = &vars_rx_e, 
 	              treatments_ind = 1 8,
 	              treatments_names = riluzole,
+	              startst=obst, endst=obed);	
+
+		ods output estimates=modelestimates;
+		proc genmod data = wk_sccs;
+		Class risk_riluzole_1(ref = "0") risk_riluzole_2(ref = "0") risk_riluzole_3(ref = "0") 
+			  risk_riluzole_4(ref = "0") risk_riluzole_5(ref = "0") risk_riluzole_6(ref = "0") 
+			  risk_riluzole_7(ref = "0") risk_riluzole_8(ref = "0") age id season / order = data;/*param=ref ref=first*/
+		Model nevt = risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 
+					 risk_riluzole_4 risk_riluzole_5 risk_riluzole_6 
+					 risk_riluzole_7 risk_riluzole_8 age season /dist=poisson link=log offset=l_off;
+		/*repeated subject=id;*/
+		/* Use the estimate statement to get predicted values and their confidence intervals */
+		Estimate "strx_30b" risk_riluzole_1 1 -1 / exp ;
+		Estimate "strx_0a" risk_riluzole_2  1 -1 / exp ;
+		Estimate "strx_30a" risk_riluzole_3 1 -1 / exp ;
+		Estimate "strx_60a" risk_riluzole_4 1 -1 / exp ;
+		Estimate "strx_90a" risk_riluzole_5 1 -1 / exp ;
+		Estimate "strx_120a" risk_riluzole_6 1 -1 / exp ;
+		Estimate "strx_150a" risk_riluzole_7 1 -1 / exp ;
+		Estimate "strx_180a" risk_riluzole_8 1 -1 / exp ;
+		run;
+		ods output close;
+		
+		%obt_sccs();
+
+		proc export data=sccs_est
+		    outfile="&outdir/mnd.xlsx"
+		    dbms=xlsx 
+			replace;
+			sheet="&batch";
+		run;
+	%END;
+
+	%IF &collapse=T %THEN %DO;
+		
+		%sccs(data=sccs_sted_event, 
+	              pid=id,
+	              dob_raw=dob, events=&vars_event, 
+	              start_risk = &vars_rx_s, 
+	              end_risk = &vars_rx_e, 
+	              treatments_ind = 1 5,
+	              treatments_names = riluzole,
 	              startst=obst, endst=obed);
 
-	ods output estimates=modelestimates;
-	proc genmod data = wk_sccs;
-	Class risk_riluzole_1(ref = "0") risk_riluzole_2(ref = "0") risk_riluzole_3(ref = "0") 
-		  risk_riluzole_4(ref = "0") risk_riluzole_5(ref = "0") risk_riluzole_6(ref = "0") 
-		  risk_riluzole_7(ref = "0") risk_riluzole_8(ref = "0") age id season / order = data;/*param=ref ref=first*/
-	Model nevt = risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 
-				 risk_riluzole_4 risk_riluzole_5 risk_riluzole_6 
-				 risk_riluzole_7 risk_riluzole_8 age season /dist=poisson link=log offset=l_off;
-	/*repeated subject=id;*/
-	/* Use the estimate statement to get predicted values and their confidence intervals */
-	Estimate "strx_30b" risk_riluzole_1 1 -1 / exp ;
-	Estimate "strx_0a" risk_riluzole_2  1 -1 / exp ;
-	Estimate "strx_30a" risk_riluzole_3 1 -1 / exp ;
-	Estimate "strx_60a" risk_riluzole_4 1 -1 / exp ;
-	Estimate "strx_90a" risk_riluzole_5 1 -1 / exp ;
-	Estimate "strx_120a" risk_riluzole_6 1 -1 / exp ;
-	Estimate "strx_150a" risk_riluzole_7 1 -1 / exp ;
-	Estimate "strx_180a" risk_riluzole_8 1 -1 / exp ;
-	run;
-	ods output close;
+		ods output estimates=modelestimates;
+		proc genmod data = wk_sccs;
+		Class risk_riluzole_1(ref = "0") risk_riluzole_2(ref = "0") risk_riluzole_3(ref = "0") 
+			  risk_riluzole_4(ref = "0") risk_riluzole_5(ref = "0") age id season / order = data;/*param=ref ref=first*/
+		Model nevt = risk_riluzole_1 risk_riluzole_2 risk_riluzole_3 
+					 risk_riluzole_4 risk_riluzole_5 age season /dist=poisson link=log offset=l_off;
+		/*repeated subject=id;*/
+		/* Use the estimate statement to get predicted values and their confidence intervals */
+		Estimate "strx_30b" risk_riluzole_1 1 -1 / exp ;
+		Estimate "strx_0a" risk_riluzole_2  1 -1 / exp ;
+		Estimate "strx_60a" risk_riluzole_3 1 -1 / exp ;
+		Estimate "strx_120a" risk_riluzole_4 1 -1 / exp ;
+		Estimate "strx_180a" risk_riluzole_5 1 -1 / exp ;
+		run;
+		ods output close;
+		
+		%obt_sccs_collapse();
 
-	proc export data=modelestimates
-	    outfile="&outdir/mnd.xlsx"
-	    dbms=xlsx 
-		replace;
-		sheet="&batch";
-	run;
+		proc export data=sccs_est
+		    outfile="&outdir/mnd.xlsx"
+		    dbms=xlsx 
+			replace;
+			sheet="&batch";
+		run;
+	%END;
 
 %MEND run_sccs;
+
+
+%MACRO obt_sccs;
+	/* Create a new table with the sums */
+	proc sql;
+	    create table sum_personcounts as 
+	    select sum(nevt * risk_riluzole_1) as strx_30b,
+	           sum(nevt * risk_riluzole_2) as strx_0a,
+	           sum(nevt * risk_riluzole_3) as strx_30a,
+	           sum(nevt * risk_riluzole_4) as strx_60a,
+	           sum(nevt * risk_riluzole_5) as strx_90a,
+	           sum(nevt * risk_riluzole_6) as strx_120a,
+	           sum(nevt * risk_riluzole_7) as strx_150a,
+	           sum(nevt * risk_riluzole_8) as strx_180a,
+			   sum(nevt * (risk_riluzole-1)*-1) as baseline
+	    from wk_sccs ;
+	quit;
+
+	/* Transpose the table to get the columns as rows */
+	proc transpose data=sum_personcounts out=sum_personcounts (rename=(_name_=risk_period col1=no_people));
+	    var strx_30b strx_0a strx_30a strx_60a strx_90a strx_120a strx_150a strx_180a baseline;
+		label risk_period='risk period'; 
+	run;
+
+	/*add a column of total event number by id*/
+	proc sql;
+	    create table wk_sccs as
+	    select *, sum(nevt) as nevt_total
+	    from wk_sccs
+	    group by id;
+	quit;
+
+	proc sql;
+	    create table sum_py as
+	    select 
+	        sum(offset*risk_riluzole_1*nevt_total)/365.25 as strx_30b,
+			sum(offset*risk_riluzole_2*nevt_total)/365.25 as strx_0a,
+			sum(offset*risk_riluzole_3*nevt_total)/365.25 as strx_30a,
+			sum(offset*risk_riluzole_4*nevt_total)/365.25 as strx_60a,
+			sum(offset*risk_riluzole_5*nevt_total)/365.25 as strx_90a,
+			sum(offset*risk_riluzole_6*nevt_total)/365.25 as strx_120a,
+			sum(offset*risk_riluzole_7*nevt_total)/365.25 as strx_150a,
+			sum(offset*risk_riluzole_8*nevt_total)/365.25 as strx_180a,
+			sum(offset*(risk_riluzole-1)*-1  *nevt_total)/365.25 as baseline
+	    from wk_sccs;
+	quit;
+	/* Transpose the table to get the columns as rows */
+	proc transpose data=sum_py out=sum_py (rename=(_name_=risk_period col1=no_py) ) ;
+	    var strx_30b strx_0a strx_30a strx_60a strx_90a strx_120a strx_150a strx_180a baseline;
+		label risk_period='risk period'; 
+	run;
+
+	PROC SQL;
+	   CREATE TABLE sccs_py AS
+	   SELECT *
+	   FROM sum_personcounts
+	   LEFT JOIN sum_py
+	   ON sum_personcounts.risk_period = sum_py.risk_period;
+	QUIT;
+
+	/*clean estimation*/
+	data modelestimates;
+		set modelestimates;
+		pvalue = lag(ProbChiSq);
+		format pvalue PVALUE6.4;
+	run;
+
+	data modelestimates;
+		set modelestimates;
+		if pvalue = '_' then pvalue=.;
+		if missing(pvalue )then pvalue=.;
+	run;
+
+	proc sql;
+		create table temp_est as
+		select substr(label, index(label, '(') + 1, length(label) - index(label, '(') - 1) as label, 
+				LBetaEstimate, LBetaLowerCL,LBetaUpperCL,pvalue from
+		modelestimates where not missing(pvalue);
+	run;
+
+	proc sql;
+		create table sccs_est as
+		select * 
+	    from sccs_py 
+	    left join (
+	        select LBetaEstimate, LBetaLowerCL, LBetaUpperCL, pvalue 
+	        from temp_est
+	    ) on sccs_py.risk_period = temp_est.label
+		ORDER BY
+	      CASE sccs_py.risk_period 
+	         WHEN 'strx_30b' THEN 1
+	         WHEN 'strx_0a' THEN 2
+	         WHEN 'strx_30a' THEN 3
+			 WHEN 'strx_60a' THEN 4
+	         WHEN 'strx_90a' THEN 5
+	         WHEN 'strx_120a' THEN 6
+	         WHEN 'strx_150a' THEN 7
+			 WHEN 'strx_180a' THEN 8
+	         ELSE 9
+		END;
+	quit;
+
+	proc sql;
+		drop table sum_personcounts;
+		drop table sum_py;
+		drop table sccs_py;
+		drop table temp_est;
+	quit;
+%MEND;
+
+
+%MACRO obt_sccs_collapse;
+	/* Create a new table with the sums */
+	proc sql;
+	    create table sum_personcounts as 
+	    select sum(nevt * risk_riluzole_1) as strx_30b,
+	           sum(nevt * risk_riluzole_2) as strx_0a,
+	           sum(nevt * risk_riluzole_3) as strx_60a,
+	           sum(nevt * risk_riluzole_4) as strx_120a,
+	           sum(nevt * risk_riluzole_5) as strx_180a,
+			   sum(nevt * (risk_riluzole-1)*-1) as baseline
+	    from wk_sccs ;
+	quit;
+
+	/* Transpose the table to get the columns as rows */
+	proc transpose data=sum_personcounts out=sum_personcounts (rename=(_name_=risk_period col1=no_people));
+	    var strx_30b strx_0a strx_60a strx_120a strx_180a baseline;
+		label risk_period='risk period'; 
+	run;
+
+	/*add a column of total event number by id*/
+	proc sql;
+	    create table wk_sccs as
+	    select *, sum(nevt) as nevt_total
+	    from wk_sccs
+	    group by id;
+	quit;
+
+	proc sql;
+	    create table sum_py as
+	    select 
+	        sum(offset*risk_riluzole_1*nevt_total)/365.25 as strx_30b,
+			sum(offset*risk_riluzole_2*nevt_total)/365.25 as strx_0a,
+			sum(offset*risk_riluzole_3*nevt_total)/365.25 as strx_60a,
+			sum(offset*risk_riluzole_4*nevt_total)/365.25 as strx_120a,
+			sum(offset*risk_riluzole_5*nevt_total)/365.25 as strx_180a,
+			sum(offset*(risk_riluzole-1)*-1  *nevt_total)/365.25 as baseline
+	    from wk_sccs;
+	quit;
+	/* Transpose the table to get the columns as rows */
+	proc transpose data=sum_py out=sum_py (rename=(_name_=risk_period col1=no_py) ) ;
+	    var strx_30b strx_0a strx_60a strx_120a strx_180a baseline;
+		label risk_period='risk period'; 
+	run;
+
+	PROC SQL;
+	   CREATE TABLE sccs_py AS
+	   SELECT *
+	   FROM sum_personcounts
+	   LEFT JOIN sum_py
+	   ON sum_personcounts.risk_period = sum_py.risk_period;
+	QUIT;
+
+	/*clean estimation*/
+	data modelestimates;
+	set modelestimates;
+	pvalue = lag(ProbChiSq);
+	format pvalue PVALUE6.4;
+	run;
+
+	data modelestimates;
+	set modelestimates;
+	if pvalue = '_' then pvalue=.;
+	if missing(pvalue )then pvalue=.;
+	run;
+
+	proc sql;
+		create table temp_est as
+		select substr(label, index(label, '(') + 1, length(label) - index(label, '(') - 1) as label, 
+				LBetaEstimate, LBetaLowerCL,LBetaUpperCL,pvalue from
+		modelestimates where not missing(pvalue);
+	run;
+
+	proc sql;
+		create table sccs_est as
+		select * 
+	    from sccs_py 
+	    left join (
+	        select LBetaEstimate, LBetaLowerCL, LBetaUpperCL, pvalue 
+	        from temp_est
+	    ) on sccs_py.risk_period = temp_est.label
+		ORDER BY
+	      CASE sccs_py.risk_period 
+	         WHEN 'strx_30b' THEN 1
+	         WHEN 'strx_0a' THEN 2
+			 WHEN 'strx_60a' THEN 4
+	         WHEN 'strx_120a' THEN 6
+			 WHEN 'strx_180a' THEN 8
+	         ELSE 9
+		END;
+	quit;
+
+
+%MEND;
