@@ -132,12 +132,13 @@ OPTIONS nodate nonumber;
 	%LET agerange=;
 	/* Define risk periods */
 	
-	%IF &collapse=T %THEN %DO;
-		%LET risk = -30 0 1 60 61 120 121 180 181 9999999999;
-	%END;
 
 	%IF &collapse=F %THEN %DO;
 		%LET risk = -30 0 1 30 31 60 61 90 91 120 121 150 151 180 181 99999999;
+	%END;
+
+	%IF &collapse=T %THEN %DO;
+		%LET risk = -30 0 1 60 61 120 121 180 181 9999999999;	
 	%END;
 
 
@@ -161,8 +162,9 @@ OPTIONS nodate nonumber;
 
 	%LET age = %generate_sequence(start=&age_min, end=&age_max);
 /*	%LET age= 0 7300 10950 14600 18250 21900 25550 29200 32850;*/
-	/* No adjustment for seasonality is used in this example */
+
 	%LET season= 01MAR 01MAY 01SEP 01NOV;
+
 	/* No semiparametric analysis is done */
 	%LET semi=N;
 
@@ -176,6 +178,32 @@ OPTIONS nodate nonumber;
 
 	/*cut the risk period*/
 	%cut_risks;
+	
+	/*adjust the pre-exposure period*/
+	
+	%macro adjust_timestamps(data=);
+		%let num_periods = %sysfunc(countw(&vars_rx_s.));
+		%put &num_periods;
+		DATA &data;
+		SET &data;
+
+	    %do i=2 %to &num_periods;
+			%let j = %eval(&i-1);
+			IF drug_st&i._1 <= drug_ed&j THEN DO;
+				temp = drug_ed&j;
+	/*			temp = intnx('day', drug_ed&j, 1);*/
+	/*			%put intnx('day', drug_ed&j, 1);*/
+				IF temp < drug_ed&i._1 THEN DO;
+					drug_st&i._1 = temp+1;
+				END;
+			END;
+	    %end;
+		RUN;
+	%mend;
+
+	%adjust_timestamps(data=sccs_dt_e_r);
+
+
 	/*merge the same risk period into one same column*/
 	%restructure_risk_periods;
 
@@ -259,8 +287,8 @@ OPTIONS nodate nonumber;
 	              end_risk = &vars_rx_e, 
 	              treatments_ind = 1 5,
 	              treatments_names = riluzole,
-	              startst=obst, endst=obed);
-
+	              startst=obst, endst=obed,collapse=T);
+		
 		ods output estimates=modelestimates;
 		proc genmod data = wk_sccs;
 		Class risk_riluzole_1(ref = "0") risk_riluzole_2(ref = "0") risk_riluzole_3(ref = "0") 

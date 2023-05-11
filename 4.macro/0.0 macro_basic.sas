@@ -335,7 +335,7 @@ RUN;
 %local j;
 %do j=1 %to %sysfunc(countw(&vars_rx_s));
 	%shiftwd(rawdata=sccs_dt_e_r,fromvar= %scan(&vars_rx_s,&j),endvar=%scan(&vars_rx_e,&j),wdays= &risk);
-   	%put %scan(&vars_rx_s,&j);
+/*   	%put %scan(&vars_rx_s,&j);*/
 %end;
 %mend cut_risks;
 
@@ -360,12 +360,8 @@ RUN;
 
 	%ob_col_names(DRUG_ST__&j);
 	%let vars_rx_s_new=&vars_temp;
-/*	%ob_col_names(%upcase(%scan(DRUG_ED__&j)));*/
 	%ob_col_names(DRUG_ED__&j);
 	%let vars_rx_e_new=&vars_temp;
-/*	%ob_col_names(EVENT%);*/
-/*	%let vars_event = &vars_temp;*/
-/*	%put &vars_rx_s_new;*/
 	%rs_rp_4_rx(&j);
 	%if &j =1 %then %do;
 		data sccs_dt_st_ed_out;
@@ -375,9 +371,16 @@ RUN;
 	%else %do;
 		data sccs_dt_st_ed_out;
 			merge sccs_dt_st_ed_out sccs_dt_st_ed;
-			by id obst obed dob;
+			by id obst obed dob rx_seq;
 		run;
+/*		proc sql;*/
+/*			create table sccs_dt_st_ed_out as*/
+/*			select * from */
+/*			(select * from sccs_dt_st_ed_out) as a left join */
+/*			(select * from sccs_dt_st_ed) as b on a.id=b.id and a.obst=b.obst and a.obed = b.obed and a.dob = b.dob;*/
+/*		run;*/
 	%end;
+
 	%if &j = %EVAL(%sysfunc(countw(&risk))/2) %then %do;
 		proc sql;
 		drop table work.sccs_dt_st_ed;
@@ -385,6 +388,7 @@ RUN;
 	%end;
 %end;
 %mend restructure_risk_periods;
+
 
 
 
@@ -410,14 +414,29 @@ RUN;
 	   by id obst obed dob;
 	run;
 
+	data sccs_dt_e_r_st_long;
+	  set sccs_dt_e_r_st_long;
+	  by id;
+	  if first.id then rx_seq = 1;
+	  else rx_seq  + 1;
+	run;
+
+
 	proc transpose data=sccs_dt_e_r_ed out=sccs_dt_e_r_ed_long (drop=_NAME_ rename=(COL1=&new_name_e));
 	   var &vars_rx_e_new;
 	   by id obst obed dob;
 	run;
 
+	data sccs_dt_e_r_ed_long;
+	  set sccs_dt_e_r_ed_long;
+	  by id;
+	  if first.id then rx_seq = 1;
+	  else rx_seq  + 1;
+	run;
+
 	data sccs_dt_st_ed;
 	  merge sccs_dt_e_r_st_long sccs_dt_e_r_ed_long;
-	  by id obst obed dob ; 
+	  by id obst obed dob rx_seq; 
 	run;
 
 	data sccs_dt_st_ed;
@@ -438,3 +457,4 @@ RUN;
 	quit;
 
 %mend rs_rp_4_rx(vars_rx_s_new,vars_rx_e_new);
+

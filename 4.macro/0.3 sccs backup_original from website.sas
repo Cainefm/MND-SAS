@@ -85,7 +85,7 @@
 /***************************************************************************/
 
 
-%MACRO sccs(data=, pid=pid, dob_raw=, events=, start_risk=, end_risk=,treatments_ind=,treatments_names=, startst=, endst=, covars=, outdata=,collapse=F);
+%MACRO sccs(data=, pid=pid, dob_raw=, events=, start_risk=, end_risk=,treatments_ind=,treatments_names=, startst=, endst=, covars=, outdata=);
 
 %GLOBAL nb_start_risk nb_end_risk nb_evt;
 
@@ -278,58 +278,8 @@ DATA wk_sccs;
   %DO i=1 %TO &nb_evt;
     nevt = nevt + (start < event&i <= stop);	**=1 if IS in interval, =0 if not;
   %END;
- 
-   int = 1;
-RUN;
-
-
-DATA abc1;
-SET wk_sccs;
-KEEP  &pid start stop;
-RUN;
-
-DATA abc2;
-SET wk_sccs;
-KEEP &pid
-%DO i = 1 %TO &nb_start_risk;
-	start_risk&i end_risk&i 
-%END;
-;
-RUN;
-
-PROC SORT DATA=abc2 nodup;
- BY id 
-%DO i = 1 %TO &nb_start_risk;
-	start_risk&i end_risk&i 
-%END;
-;
-RUN;
-
-proc sql;
-	create table abc3 as
-	select * from abc1 
-	full join abc2 
-	on abc1.&pid = abc2.&pid;
-quit;
-
-DATA abc3;
-RETAIN &pid
+  
   %DO i=1 %TO &nb_treatments ;
- 	%let treatment=&&treatments&i;
-	risk_&treatment
-	%let ind_min=%eval(2*&i - 1);
-	%let ind_max=%eval(2*&i);
-	%let k=1;
-	%DO j=&&ind&ind_min %TO &&ind&ind_max;
-		risk_&treatment._&k
-		%let k=%eval(&k+1);
-	%END;
-	%let nb_&treatment=%eval(&k-1);
-  %END;
-  ;
-set abc3;
-BY &pid;
-%DO i=1 %TO &nb_treatments ;
   	%LET treatment=&&treatments&i;
    	%DO k=1 %TO &&nb_&treatment;
 		%let ind_min=%eval(2*&i - 1);
@@ -338,62 +288,6 @@ BY &pid;
 		risk_&treatment._&k = (start_risk&l <= start AND stop <= end_risk&l);
    	%END;
   %END;
-run;
-
-%IF &collapse=F %THEN %DO;
-	PROC SQL;
-	CREATE TABLE abc4 AS
-	SELECT id, start, stop,SUM(risk_&treatment._1) AS risk_&treatment._1, 
-			   SUM(risk_&treatment._2) AS risk_&treatment._2, 
-			   SUM(risk_&treatment._3) AS risk_&treatment._3,
-			   SUM(risk_&treatment._4) AS risk_&treatment._4,
-			   SUM(risk_&treatment._5) AS risk_&treatment._5,
-			   SUM(risk_&treatment._6) AS risk_&treatment._6, 
-			   SUM(risk_&treatment._7) AS risk_&treatment._7, 
-			   SUM(risk_&treatment._8) AS risk_&treatment._8
-	FROM abc3
-	GROUP BY &pid,start;
-	QUIT;
-%END;
-
-%IF &collapse=T %THEN %DO;
-	PROC SQL;
-	CREATE TABLE abc4 AS
-	SELECT id, start, stop,SUM(risk_&treatment._1) AS risk_&treatment._1, 
-			   SUM(risk_&treatment._2) AS risk_&treatment._2, 
-			   SUM(risk_&treatment._3) AS risk_&treatment._3,
-			   SUM(risk_&treatment._4) AS risk_&treatment._4,
-			   SUM(risk_&treatment._5) AS risk_&treatment._5
-	FROM abc3
-	GROUP BY &pid,start;
-	QUIT;
-%END;
-
-
-proc sort data=abc4 nodup;
-by id stop;
-run;
-
-proc sql;
-	create table wk_sccs as
-	select * from abc4 
-	full join wk_sccs 
-	on abc4.&pid = wk_sccs.&pid
-	and abc4.start=wk_sccs.start
-	and abc4.stop =wk_sccs.stop;
-quit;
-
-
-DATA wk_sccs;
-  RETAIN &pid &dob_raw start stop nevt offset &covars age season
-
-  %DO i=1 %TO &nb_treatments ;
- 	%let treatment=&&treatments&i;
-	risk_&treatment
-  %END;
-  ;
-  SET wk_sccs;
-  BY &pid;
 
   %DO i=1 %TO &nb_treatments ;
   	%LET treatment=&&treatments&i;
@@ -405,7 +299,6 @@ DATA wk_sccs;
   %END;
    int = 1;
 RUN;
-
 
 %IF &outdata= %THEN %DO;
   %LET outdata=wk_sccs;

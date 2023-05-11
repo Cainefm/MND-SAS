@@ -1,10 +1,14 @@
 /****************************************************************************
 *  Macro name : motor neurone disease                                       *
-*  Version    : 1.00                                                        *
+*  Version    : 1.1                                                        *
 *  Author     : FAN Min		                                                *
 *  Date : 26JUL2022                                                         *
 *  ------------------------------------------------------------------------ *
 *  Revisions :   Versions     Date       Author                             *
+*				  1.1		 11MAY2023   FAN Min							*
+*				  Fixed the multiple prescription problem by adding a       *
+*				  additional chopping function in the original sccs_macro   *
+*				  provided. =_= Ready to go i think.						*
 *                 1.0        02MAY2023   FAN Min                            *
 *				  SCCS model finished; code structure cleaned				*
 *                 0.91       15JAN2023   FAN Min							*
@@ -22,7 +26,7 @@
 *				  0.1		 11AUG2022   FAN Min							*
 *				  Macro for reading raw dataset and get past Dx hx			*
 *  ------------------------------------------------------------------------ *
-*  Description : Macro to create dataset for case series analysis           *
+*  Description : Macro to data cleaning and analysis for MND study 			*
 *  ------------------------------------------------------------------------ *
 *  INPUT - parameters                                                       *
 *                                                                           *
@@ -82,10 +86,9 @@
 %let sccs_obs_st=24aug2001;
 %let sccs_obs_ed=31dec2018;
 %let wd = C:/Users/LabPCSLi03/Desktop/mnd project;
-
-options dlcreatedir; /* Create folders */
-%let rc = %sysfunc(dlgcdir("&wd.")); /* working path for my projects */
-
+/* Define macro and output directories */
+libname sasfiles "./2.sas data";
+libname output "./3.output";
 
 filename dx "./1.raw data/dx.xlsx";
 filename ip "./1.raw data/ip.xlsx";
@@ -93,50 +96,48 @@ filename rx "./1.raw data/rx.xlsx";
 filename demo "./1.raw data/demo.xlsx";
 filename codesmnd "./1.raw data/codes_mnd.xlsx";
 
-/* Define macro and output directories */
-libname sasfiles "./2.sas data";
-libname output "./3.output";
-
+options dlcreatedir; /* Create folders */
+%let rc = %sysfunc(dlgcdir("&wd.")); /* working path for my projects */
 %LET macdir = &wd/4.macro;
 %LET outdir = &wd/3.output;
+
+
+
+/* ************************************************************** */
+/* Analysis 1: Descriptive study for MND						  */
+/* ************************************************************** */
 
 /* Read in macros */
 %INCLUDE "&macdir\0.0 macro_basic.sas";
 %INCLUDE "&macdir\0.0 Table 1s.sas";
-
-/*%INCLUDE "&macdir\macro_sccs.sas";*/
 
 /* Data reading */
 %reading(filename=demo,out=demo)
 %reading(filename=dx,out=dx)
 %reading(filename=ip,out=ip)
 %reading(filename=rx,out=rx)
-
 %reading(filename=codesmnd,out=codesmnd)
 %reading(filename=codesmnd,sheet=hx,out=hx)
 %reading(filename=codesmnd,sheet=subtype,out=subtype)
 %reading(filename=codesmnd,sheet=rx,out=codesrx)
 
-/*SCCS model*/
+/* ************************************************************** */
+/* Analysis 2: survival analysis between death and rilozle 		  */
+/* ************************************************************** */
+
+%INCLUDE "&macdir\0.2 macro_survival.sas"
+
+
+/* ************************************************************** */
+/* Analysis 3: Descriptive study for MND						  */
+/* ************************************************************** */
 %INCLUDE "&macdir\0.3 sccs.sas";
 %INCLUDE "&macdir\0.3 poisreg.sas";
 %INCLUDE "&macdir\0.3 element.sas";
-
 %INCLUDE "&macdir\0.3 macro_sccs.sas";
 
 %run_sccs(title=primary_analysis);
-%run_sccs(title=sg_ae,ae=T)
-%run_sccs(title=sg_pneumonia,icd_defined = "/486/")
-%run_sccs(title=sg_arf,icd_defined = "/518.8[12]/")
-%run_sccs(title=sens_collapse,collapse=T)
-
-%run_sccs_collapse()
-
-%put &icd_defined;
-%let icd_defined = "/^486/";
-%let icd_defined = "/^518.8[12]/";
-
-
-
-
-	
+%run_sccs(title=sg_ae,ae=T);
+%run_sccs(title=sg_pneumonia,icd_defined = "/486/");
+%run_sccs(title=sg_arf,icd_defined = "/518.8[12]/");
+%run_sccs(title=sens_collapse,collapse=T);
