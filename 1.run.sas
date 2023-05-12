@@ -28,67 +28,44 @@
 *  ------------------------------------------------------------------------ *
 *  Description : Macro to data cleaning and analysis for MND study 			*
 *  ------------------------------------------------------------------------ *
-*  INPUT - parameters                                                       *
-*                                                                           *
-*     data     :  Input dataset                                             *
-*     pid      :  subject ID number                                         * 
-*     dob_raw  :  Date of birth                                             *
-*     events   :  Dates for events                                          *
-*     vacc     :  Dates for vaccinations                                    *
-*     startst  :  Study start                                               *
-*     endst    :  Study end                                                 *
-*     covars   :  Covariates to be put in output dataset                    *
-*     overlap  :  Allow overlapping risk intervals (Default=N)              *
-*                                                                           *
-*  INPUT - macros variables (other than standards)                          *
-*                                                                           *
-*     agerange : e.g., 0 730 (in days)                                      *
-*     risk     : risk periods after vaccination, e.g., 0 6 7 14             *
-*                 (first period from 0 to 6 days                            *
-*                 and a second period from 7 to 14 days)                    *
-*     age      : age cutpoints for age covariates in model,                 *
-*                 e.g., 90 180 270 360                                      *
-*     season   : season cutpoints for season covariates in model,           *
-*                 e.g., 31MAR 30JUN 30SEP 31DEC                             *
-*                                                                           *
-*  INPUT - datasets from lib_data                                           *
-*                                                                           *
-*                                                                           *
-*  INPUT - datasets from work                                               *
-*                                                                           *
+*	INPUT - global parameters
+*	  sysdx            : The diagnosis system in your system
+*				         (pls check the codes_mnd.xlsx sheet name:hx)
+*				 		 icd9 / icd10 / icd9_icd10 / icd9_icd10_nodecimal
+*	  sysrx            : The prescripiton system in your system
+*				 	   	 (pls check the codes_mnd.xlsx sheet name:rx)
+*				 		 BNF / ATC / NCS / ATC_NCS
+*	  studydate_st	   : The study observation start date
+*	  studydate_ed 	   : The study observation end date 
+*	  sccs_obs_st	   : The observation start date in SCCS model
+*	  sccs_obs_ed	   : The observation end date in SCCS model
+*	  wd			   : The working directory
 *  ------------------------------------------------------------------------ *
-*  OUTPUT - macros variables                                                *
-*                                                                           *
-*                                                                           *
-*  OUTPUT datasets in  work                                                 *
-*                                                                           *
-*     wk_sccs                                                               *
-*     This dataset contains a class variable for age and indicator variables*
-*     for the different risk periods:                                       *
-*       RISK = 1 if the interval lies in a risk period                      *
-*       RISKVi = 1 if the interval lies in a risk period after dose i       *
-*       RISKRj = 1 if the interval lies in the jth risk period over all     *
-*                doses                                                      *
-*       RISKk = 1 if the interval lies in the kth risk period (each risk    *
-*                 period after each dose has a separate indicator variable) *
-*       When overlap=Y, overlapping intervals are possible and these        *
-*       variables should be used with caution                               *
-*  ------------------------------------------------------------------------ *
-*  UPDATE - table                                                           *
-*                                                                           *
+*	DIRECTORY - folders
+*	  0.documents      : 
+*	  1.raw data       : Raw data (demo, dx, ip, rx, and codes_mnd.xlsx)
+*     2.sas data       : Temp folder for sas data storage
+*     3.output         : Folder for results exporting
+*     4.macro          : Macro for all analysis
+*	
 ****************************************************************************/
 
-/*define codes system and excel folder in your study sites*/
-%let sysdx=icd9;
+/* Define macro and output directories */
+%let sysdx=icd9; 
 %let sysrx=atc;
 %let studydate_st=01jan1994;
 %let studydate_ed=31dec2018;
 %let sccs_obs_st=24aug2001;
 %let sccs_obs_ed=31dec2018;
+
 %let wd = C:/Users/LabPCSLi03/Desktop/mnd project;
-/* Define macro and output directories */
+options dlcreatedir; /* Create folders */
+%let rc = %sysfunc(dlgcdir("&wd."));
+
+%LET macdir = &wd/4.macro;
+%LET outdir = &wd/3.output;
+
 libname sasfiles "./2.sas data";
-libname output "./3.output";
 
 filename dx "./1.raw data/dx.xlsx";
 filename ip "./1.raw data/ip.xlsx";
@@ -96,10 +73,6 @@ filename rx "./1.raw data/rx.xlsx";
 filename demo "./1.raw data/demo.xlsx";
 filename codesmnd "./1.raw data/codes_mnd.xlsx";
 
-options dlcreatedir; /* Create folders */
-%let rc = %sysfunc(dlgcdir("&wd.")); /* working path for my projects */
-%LET macdir = &wd/4.macro;
-%LET outdir = &wd/3.output;
 
 
 
@@ -122,11 +95,16 @@ options dlcreatedir; /* Create folders */
 %reading(filename=codesmnd,sheet=rx,out=codesrx)
 
 /* ************************************************************** */
-/* Analysis 2: survival analysis between death and rilozle 		  */
+/* Analysis 2: demographic information (table one) 		  	  	  */
 /* ************************************************************** */
 
-%INCLUDE "&macdir\0.2 macro_survival.sas"
+%INCLUDE "&macdir\0.1 macro_demo.sas" / source2;
 
+/* ************************************************************** */
+/* Analysis 3: survival analysis between death and rilozle 		  */
+/* ************************************************************** */
+
+%INCLUDE "&macdir\0.2 macro_survival.sas" / source2;
 
 /* ************************************************************** */
 /* Analysis 3: Descriptive study for MND						  */
@@ -136,8 +114,8 @@ options dlcreatedir; /* Create folders */
 %INCLUDE "&macdir\0.3 element.sas";
 %INCLUDE "&macdir\0.3 macro_sccs.sas";
 
-%run_sccs(title=primary_analysis);
+%run_sccs(title=pri);
 %run_sccs(title=sg_ae,ae=T);
-%run_sccs(title=sg_pneumonia,icd_defined = "/486/");
+%run_sccs(title=sg_pne,icd_defined = "/486/");
 %run_sccs(title=sg_arf,icd_defined = "/518.8[12]/");
 %run_sccs(title=sens_collapse,collapse=T);

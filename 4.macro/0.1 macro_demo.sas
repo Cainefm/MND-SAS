@@ -2,6 +2,7 @@
 /* Analysis 2: demographic information (table one) 		  	  	  */
 /* ************************************************************** */
 
+
 /*clean the codes file: delete the empty title lines*/
 proc sql;
 	create table sasfiles.codesmnd as
@@ -69,7 +70,7 @@ run;
 		out_table1=table1)
 
 proc export data=table1
-    outfile="3.output/mnd.xlsx"
+    outfile="&outdir/mnd.xlsx"
     dbms=xlsx
     replace;
     sheet="table 1 demo";

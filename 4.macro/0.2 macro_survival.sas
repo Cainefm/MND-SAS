@@ -105,19 +105,23 @@ else endpt=0;
 run;
 
 proc export data=dt4cox1
-    outfile="C:/Users/LabPCSLi03/Desktop/mnd project/test.xlsx"
+    outfile="&outdir/mnd.xlsx"
     dbms=xlsx
     replace;
     sheet="data4cox";
 run;
 
 /*time dependent exposure analysis on Cox regression */
+options noxwait;
+ods excel file='..\3.output\mnd_cox.xlsx'; 
+ods excel options(sheet_name='Cox Model' embedded_titles='YES' proc_append='YES');
+ods select ParameterEstimates;
 proc phreg data=dt4cox1;
  id id time endpt;
  class sex(ref='F') dx_htn(ref="0") dx_depre(ref="0") dx_pd(ref="0")  / param=glm;
- model (tstart,tstop)*endpt(0)=riluzole sex dx_htn dx_depre dx_pd score_cci / ties=efron;
- output out=obs ;
+ model (tstart,tstop)*endpt(0)=riluzole sex dx_htn dx_depre dx_pd score_cci /RISKLIMITS ties=efron;
 run;
+ods excel close;
 
 /*accelarate failure time model for sensitivity analysis*/
 data dt4aft; set dt4cox1;run;
@@ -125,8 +129,19 @@ proc sort data=dt4aft;
 by descending sex descending dx_htn descending dx_depre descending dx_pd; 
 run;
 
+/*time dependent exposure analysis on AFT regression */
+options noxwait;
+ods excel file='..\3.output\mnd_aft.xlsx'; 
+ods select ParameterEstimates;
 proc lifereg data=dt4aft order=data;
- class sex dx_htn dx_depre dx_pd ;
- model time*endpt(0)=riluzole sex dx_htn dx_depre dx_pd score_cci / dist=weibull noscale ;
- output out=obs_aft;
+ class riluzole sex dx_htn dx_depre dx_pd ;
+ model time*endpt(0)=riluzole sex dx_htn dx_depre dx_pd score_cci / dist=weibull noscale;
+run;
+ods excel close;
+
+proc export data=obs_aft
+    outfile="&outdir/mnd.xlsx"
+    dbms=xlsx
+    replace;
+    sheet="data4aft";
 run;
